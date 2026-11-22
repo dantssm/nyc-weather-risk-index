@@ -19,7 +19,7 @@ def _get(url: str, params: dict[str, Any], tries: int = 5) -> list[Row]:
             time.sleep(2 ** i)
     raise RuntimeError("unreachable")
 
-def download(dataset_id: str, name: str, page_size: int = PAGE_SIZE, max_pages: int = 10_000) -> int:
+def download(dataset_id: str, name: str, where: str | None = None, page_size: int = PAGE_SIZE, max_pages: int = 10_000) -> int:
     """Save a dataset to the landing volume, one JSON-lines file per page. Returns rows saved."""
     out = Path(LANDING, name, time.strftime("%Y-%m-%d_%H%M%S"))
     out.mkdir(parents=True, exist_ok=True)
@@ -28,6 +28,8 @@ def download(dataset_id: str, name: str, page_size: int = PAGE_SIZE, max_pages: 
     total = 0
     for page in range(max_pages):
         params = {"$select": ":*, *", "$order": ":id", "$limit": page_size, "$offset": total}
+        if where:
+            params["$where"] = where
         rows = _get(url, params)
         if not rows:
             break

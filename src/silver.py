@@ -1,6 +1,6 @@
 """Clean bronze crashes into a typed, deduplicated silver table."""
 
-from pyspark.sql import DataFrame, functions as F
+from pyspark.sql import DataFrame, Window, functions as F
 from src.config import CATALOG
 
 COUNT_COLS = ["number_of_persons_injured", "number_of_persons_killed",
@@ -8,7 +8,7 @@ COUNT_COLS = ["number_of_persons_injured", "number_of_persons_killed",
               "number_of_cyclist_injured", "number_of_cyclist_killed",
               "number_of_motorist_injured", "number_of_motorist_killed"]
 DROP_COLS = ["location", "_rescued_data", ":created_at", ":id", ":version",
-             "_ingested_at", "_source_file"]
+             "_source_file"]
 
 def add_timestamp(df: DataFrame) -> DataFrame:
     """Combine crash_date ('2021-09-11T00:00:00.000') and crash_time ('13:30') into crash_ts."""
@@ -43,7 +43,10 @@ def build_silver(spark) -> None:
     df = df.drop(":updated_at", *DROP_COLS)
 
     is_bad = F.col("collision_id").isNull() | F.col("crash_ts").isNull()
-    good = df.filter(~is_bad).dropDuplicates(["collision_id"])
+    newest = Window.partitionBy("collision_id").orderBy(F.desc("_ingested_at"))
+    good = (df.filter(~is_bad)
+              .withColumn("_rn", F.row_number().over(newest))
+              .filter("_rn = 1").drop("_rn", "_ingested_at"))
     bad = df.filter(is_bad)
 
     good.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(f"{CATALOG}.silver.crashes")
